@@ -1,3 +1,11 @@
+0.02     2004-01-08
+- simplify (and fix) new_cached() algorithm
+- revised docs
+
+0.01_05  2004-01-07
+- datetime() accepts time_zone and locale parameters
+- new accepts a duration parameter
+
 0.01_04  2004-01-07
 - random generator is overridable
 - no more overflow in "set" routines for very small densities
@@ -15,6 +23,6 @@
 - more docs
 - added new_cached()
 
-0.01  2004-01-05
+0.01     2004-01-05
 - created from DT::Event::Recurrence
 

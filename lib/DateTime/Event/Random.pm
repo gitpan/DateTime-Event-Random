@@ -7,7 +7,7 @@ use vars qw( $VERSION @ISA );
 use Carp;
 
 BEGIN {
-    $VERSION = 0.01_04;
+    $VERSION = 0.02;
 }
 
 sub new_cached {
@@ -16,43 +16,37 @@ sub new_cached {
 
     my $density = $class->_random_init( \%args );
 
-    my $set = DateTime::Set->empty_set;
+    my $cache_set = DateTime::Set->empty_set;
+    my $cache_last;
+    my $cache_first;
 
     my $get_cached = 
                 sub {
                     my $dt = $_[0];
-                    my $prev = $set->previous( $dt );
-                    my $next = $set->next( $dt );
+                    my $prev = $cache_set->previous( $dt );
+                    my $next = $cache_set->next( $dt );
                     return ( $prev, $next ) if defined $prev && defined $next;
-                    my $last = $set->iterator->next;
-                    do {
-                        if ( defined $last )
-                        {
-                            $last += $class->_random_duration( $density );
-                        }
-                        else
-                        {
-                            $last = $dt - $class->_random_duration( $density );
-                        }
-                        $set = $set->union( $last );
-                    } while $last >= $dt;
 
-                    $last = $set->iterator->previous;
-                    do {
-                        if ( defined $last )
-                        {
-                            $last += $class->_random_duration( $density );
-                        }
-                        else
-                        {
-                            $last = $dt + $class->_random_duration( $density );
-                        }
-                        $set = $set->union( $last );
-                    } while $last <= $dt;
+                    # initialize the cache
+                    unless ( defined $cache_last )
+                    {
+                        $cache_last = $dt - $class->_random_duration( $density );
+                        $cache_first = $cache_last->clone;
+                        $cache_set = $cache_set->union( $cache_last );
+                    };
 
-                    $prev = $set->previous( $dt );
-                    $next = $set->next( $dt );
+                    while ( $cache_last <= $dt ) {
+                        $cache_last += $class->_random_duration( $density );
+                        $cache_set = $cache_set->union( $cache_last );
+                    };
 
+                    while ( $cache_first >= $dt ) {
+                        $cache_first -= $class->_random_duration( $density );
+                        $cache_set = $cache_set->union( $cache_first );
+                    };
+
+                    $prev = $cache_set->previous( $dt );
+                    $next = $cache_set->next( $dt );
                     return ( $prev, $next );
                 };
 
@@ -91,6 +85,14 @@ sub _random_init {
     my $args = shift;  
 
     my $density = 0;
+
+    if ( exists $args->{duration} )
+    {
+        my %dur = $args->{duration}->deltas;
+        $args->{ $_ } = $dur{ $_ } for ( keys %dur );
+        delete $args->{duration};
+    }
+
     $density += ( delete $args->{nanoseconds} ) / 1E9 if exists $args->{nanoseconds};
     $density += ( delete $args->{seconds} ) if exists $args->{seconds};
     $density += ( delete $args->{minutes} ) * 60 if exists $args->{minutes};
@@ -131,10 +133,25 @@ sub _random_duration {
                nanoseconds => int( 1E9 * ( $tmp - $seconds ) ) ); 
 }
 
+
 sub datetime {
     my $class = shift;
     carp "Missing class name in call to ".__PACKAGE__."->datetime()"
         unless defined $class;
+    my %args = @_;
+
+    my $locale    = delete $args{locale};
+    my $time_zone = delete $args{time_zone};
+
+    my $dt = $class->_random_datetime_no_locale( %args );
+
+    $dt->set( locale => $locale ) if defined $locale;
+    $dt->set( time_zone => $time_zone ) if defined $time_zone;
+    return $dt;
+}
+
+sub _random_datetime_no_locale {
+    my $class = shift;
     my %args = @_;
     my %span_args;
     my $span;
@@ -269,6 +286,7 @@ sub duration {
 
 __END__
 
+
 =head1 NAME
 
 DateTime::Event::Random - DateTime extension for creating random datetimes.
@@ -278,13 +296,13 @@ DateTime::Event::Random - DateTime extension for creating random datetimes.
 
  use DateTime::Event::Random;
 
- # Creates a DateTime
+ # Creates a random DateTime
  $dt = DateTime::Event::Random->datetime;
 
- # Creates a DateTime in the future
+ # Creates a random DateTime in the future
  $dt = DateTime::Event::Random->datetime( after => DateTime->now );
 
- # Creates a DateTime::Duration between 0 and 15 days
+ # Creates a random DateTime::Duration between 0 and 15 days
  $dur = DateTime::Event::Random->duration( days => 15 );
 
  # Creates a DateTime::Set of random dates 
@@ -292,10 +310,9 @@ DateTime::Event::Random - DateTime extension for creating random datetimes.
  # that is, 3 events per year, with a span 
  # of 2 years
  my $dt_set = DateTime::Event::Random->new(
-     months => 4,
-     start => DateTime->new( year => 2003 ),
-     end =>   DateTime->new( year => 2005 ),
- ); 
+                  months => 4,   # events occur about 3 times a year
+                  start =>  DateTime->new( year => 2003 ),
+                  end =>    DateTime->new( year => 2005 ) ); 
 
  print "next is ", $dt_set->next( DateTime->today )->datetime, "\n";
  # output: next is 2004-02-29T22:00:51
@@ -318,8 +335,6 @@ objects with random values.
 
 =head1 USAGE
 
-=over 4
-
 =item * new
 
 Creates a C<DateTime::Set> object that contains random events.
@@ -328,25 +343,27 @@ Creates a C<DateTime::Set> object that contains random events.
 
 The events occur at an average of once a day, forever.
 
-You may give I<density> parameters to change this:
+You may give I<density> parameters to change this.
+The density is specified as a duration:
 
   my $two_daily_set = DateTime::Event::Random->new( days => 2 );
 
   my $three_weekly_set = DateTime::Event::Random->new( weeks => 3 );
 
+  my $random_set = DateTime::Event::Random->new( duration => $dur );
+
 If I<span> parameters are given, then the set is bounded:
 
- my $rand = DateTime::Event::Random->new(
-     months => 4,   # events occur about 3 times a year
-     start => DateTime->new( year => 2003 ),
-     end =>   DateTime->new( year => 2005 ),
- );
+  my $rand = DateTime::Event::Random->new(
+                 months => 4,   # events occur about 3 times a year
+                 start =>  DateTime->new( year => 2003 ),
+                 end =>    DateTime->new( year => 2005 ) );
 
 Note that the random values are generated on demand, 
-which means that values may not be repeateable between iterations.
+which means that the values may not be repeateable between iterations.
 See the C<new_cached> constructor for a solution.
 
-A C<DateTime::Set> object does not allow for repetition of values.
+A C<DateTime::Set> object does not allow for the repetition of values.
 Each element in a set is different.
 
 The C<DateTime::Set> accessors (C<as_list>, C<iterator/next/previous>)
@@ -358,7 +375,7 @@ always return I<sorted> datetimes.
 Creates a C<DateTime::Set> object representing the
 set of random events.
 
-  my $random_set = DateTime::Event::Random->new_cached;
+    my $random_set = DateTime::Event::Random->new_cached;
 
 If a set is created with C<new_cached>, then once an value is I<seen>,
 it is cached, such that all sequences extracted from the set are equal.
@@ -367,6 +384,8 @@ Cached sets are slower and take more memory than sets generated
 with the plain C<new> constructor. They should only be used if
 you need unbounded sets that would be accessed many times and
 when you need repeatable results.
+
+This method accepts the same parameters as the C<new> method.
 
 
 =item * datetime
@@ -380,6 +399,9 @@ If a C<span> is specified, then the returned value will be within the span:
     $dt = DateTime::Event::Random->datetime( span => $span );
 
     $dt = DateTime::Event::Random->datetime( after => DateTime->now );
+
+You can also specify C<locale> and C<time_zone> parameters,
+just like in C<DateTime->new()>.
 
 
 =item * duration
@@ -404,14 +426,16 @@ duration:
 These methods are called by C<DateTime::Set> to generate
 the random datetime sequence.
 
-You can override these methods in order to generate different 
-random distributions. The default distribution is "uniform".
+You can override these methods in order to make different 
+random distributions. The default random distribution is "uniform".
+
+The internals API is not stable.
 
 
 =head1 COOKBOOK
 
 
-=head2 Make a random datetime
+=item * Make a random datetime
 
   use DateTime::Event::Random;
 
@@ -420,7 +444,7 @@ random distributions. The default distribution is "uniform".
   print "datetime " .  $dt->datetime . "\n";
 
 
-=head2 Make a random datetime, today
+=item * Make a random datetime, today
 
   use DateTime::Event::Random;
 
@@ -428,8 +452,22 @@ random distributions. The default distribution is "uniform".
 
   print "datetime " .  $dt->datetime . "\n";
 
+This is another way to do it. It takes care of 
+length of day problems, such as DST changes and leap seconds:
 
-=head2 Make a random sunday
+  use DateTime::Event::Random;
+
+  my $dt_today = DateTime->today;
+  my $dt_tomorrow = $dt_today + DateTime::Duration->new( days => 1 );
+
+  my $dt = DateTime::Event::Random->datetime( 
+               start =>  $dt_today, 
+               before => $dt_tomorrow );
+
+  print "datetime " .  $dt->datetime . "\n";
+
+
+=item * Make a random sunday
 
   use DateTime::Event::Random;
 
@@ -441,7 +479,7 @@ random distributions. The default distribution is "uniform".
   print "weekday " .  $dt->day_of_week . "\n";
 
 
-=head2 Make a random friday-13th
+=item * Make a random friday-13th
 
   use DateTime::Event::Random;
   use DateTime::Event::Recurrence;
@@ -465,9 +503,9 @@ fglock@pucrs.br
 
 =head1 COPYRIGHT
 
-Copyright (c) 2003 Flavio Soibelmann Glock.  
-All rights reserved.  This program
-is free software; you can redistribute it and/or modify it under the
+Copyright (c) 2004 Flavio Soibelmann Glock.  
+All rights reserved.  This program is free software; 
+you can redistribute it and/or modify it under the
 same terms as Perl itself.
 
 The full text of the license can be found in the LICENSE file included
