@@ -2,12 +2,12 @@
 package DateTime::Event::Random;
 
 use strict;
-# use DateTime;
 use DateTime::Set;
-# use DateTime::Span;
-# use Params::Validate qw(:all);
 use vars qw( $VERSION @ISA );
-$VERSION = 0.01_01;
+
+BEGIN {
+    $VERSION = 0.01_02;
+}
 
 sub new_cached {
     my $class = shift;
@@ -125,6 +125,115 @@ sub _log {
     return ( int( $tmp ), int( 1E9 * ( $tmp - int( $tmp ) ) ) ); 
 }
 
+sub datetime {
+    my $class = shift;
+    my %args = @_;
+    my %span_args;
+    my $span;
+    if ( exists $args{span} )
+    {
+        $span = delete $args{span};
+    }
+    else
+    {
+        for ( qw( start end before after ) )
+        {
+            $span_args{ $_ } = delete $args{ $_ } if exists $args{ $_ };
+        }
+        $span = DateTime::Span->from_datetimes( %span_args )
+            if ( keys %span_args );
+    } 
+
+    if ( ! defined $span ||
+         ( $span->start->is_infinite && 
+           $span->end->is_infinite ) )
+    {
+        my $dt = DateTime->now( %args );
+        $dt->add( months => ( 0.5 - rand ) * 1E6 );
+        $dt->add( days => ( 0.5 - rand ) * 31 );
+        $dt->add( seconds => ( 0.5 - rand ) * 24*60*60 );
+        $dt->add( nanoseconds => ( 0.5 - rand ) * 1E9 );
+        return $dt;
+    }
+
+    return undef unless defined $span->start;
+
+    if ( $span->start->is_infinite )
+    {
+        my $dt = $span->end;
+        $dt->add( months => ( - rand ) * 1E6 );
+        $dt->add( days => ( - rand ) * 31 );
+        $dt->add( seconds => ( - rand ) * 24*60*60 );
+        $dt->add( nanoseconds => ( - rand ) * 1E9 );
+        return $dt;
+    }
+
+    if ( $span->end->is_infinite )
+    {
+        my $dt = $span->start;
+        $dt->add( months => ( rand ) * 1E6 );
+        $dt->add( days => ( rand ) * 31 );
+        $dt->add( seconds => ( rand ) * 24*60*60 );
+        $dt->add( nanoseconds => ( rand ) * 1E9 );
+        return $dt;
+    }
+
+    my $dt1 = $span->start;
+    my $dt2 = $span->end;
+    my %deltas = $dt2->subtract_datetime( $dt1 )->deltas;
+    # find out the most significant delta
+    if ( $deltas{months} ) {
+        $deltas{months}++;
+        $deltas{days} = 31;
+        $deltas{minutes} = 24*60;
+        $deltas{seconds} = 60;
+        $deltas{nanoseconds} = 1E9;
+    }
+    elsif ( $deltas{days} ) {
+        $deltas{days}++;
+        $deltas{minutes} = 24*60;
+        $deltas{seconds} = 60;
+        $deltas{nanoseconds} = 1E9;
+    }
+    elsif ( $deltas{minutes} ) {
+        $deltas{minutes}++;
+        $deltas{seconds} = 60;
+        $deltas{nanoseconds} = 1E9;
+    }
+    elsif ( $deltas{seconds} ) {
+        $deltas{seconds}++;
+        $deltas{nanoseconds} = 1E9;
+    }
+    else {
+        $deltas{nanoseconds}++;
+    }
+
+    my %duration;
+    my $dt;
+    while (1) {
+        %duration = ();
+        for ( keys %deltas ) {
+            $duration{ $_ } = int( rand() * $deltas{ $_ } ) 
+                if $deltas{ $_ };
+        }
+        $dt = $dt1->clone->add( %duration );
+        return $dt if $span->contains( $dt );
+
+        %duration = ();
+        for ( keys %deltas ) {
+            $duration{ $_ } = int( rand() * $deltas{ $_ } )
+                if $deltas{ $_ };
+        }
+        $dt = $dt2->clone->subtract( %duration );
+        return $dt if $span->contains( $dt );
+    }
+}
+
+sub duration {
+    my $class = shift;
+    return DateTime->now() - datetime();
+}
+
 1;
 
 __END__
@@ -150,18 +259,21 @@ DateTime::Event::Random - DateTime::Set extension for creating random datetimes.
  print "next is ", $rand->next( DateTime->today )->datetime, "\n";
  # output: next is 2004-02-29T22:00:51
 
- @days = $rand->as_list;
- print "days ", 1 + $#days, "\n";
- # output: days 8
- #  - we expect a number near 6
+ my $count = $rand->count;
+ print "days $count \n";
+ # output: days 8  -- should be a number near 6
 
- print join('; ', map{ $_->datetime } @days );
+ my @days = $rand->as_list;
+ print join('; ', map{ $_->datetime } @days ) . "\n";
  # output: 2003-02-16T21:08:58; 2003-02-18T01:24:13; ...
 
 =head1 DESCRIPTION
 
 This module provides convenience methods that let you easily create
 C<DateTime::Set> objects with random datetimes.
+
+It also provides functions for building random C<DateTime> and 
+C<DateTime::Duration> objects.
 
 =head1 USAGE
 
@@ -190,40 +302,94 @@ If I<span> parameters are given, then the set is limited to the span:
      end =>   DateTime->new( year => 2005 ),
  );
 
+Unbounded random sets are generated on demand, which
+means that the datetime values would not be repeateable between iterations.
+See the C<new_cached> constructor for a solution.
+
 =item * new_cached
 
 Returns a C<DateTime::Set> object representing the
 set of random events.
 
-Unbounded random sets are generated on demand, which
-means that the datetime values would not be repeateable between iterations.
-
-If a set is created with C<new_cached>, then once an event is I<seen>, 
-it is cached, such that 
-all sequences extracted from the set are equal.
-
   my $random_set = DateTime::Event::Random->new_cached;
 
+If a set is created with C<new_cached>, then once an event is I<seen>,
+it is cached, such that
+all sequences extracted from the set are equal.
+
 Cached sets are slower and take more memory than sets generated
-with the plain C<new> constructor. It should only be used if
+with the plain C<new> constructor. They should only be used if
 you need unbounded sets that would be accessed many times and
-that need repeatable results.
+when you need repeatable results.
+
+
+=item * datetime
+
+Returns a random C<DateTime> object. 
+
+    $dt = DateTime::Event::Random->datetime;
+
+If a C<span> is specified, then the returned value will be within the span:
+
+    $dt = DateTime::Event::Random->datetime( span => $span );
+
+    $dt = DateTime::Event::Random->datetime( after => DateTime->now );
+
+
+=item * duration
+
+Returns a random C<DateTime::Duration> object.
+
+    $dur = DateTime::Event::Random->duration;
+
 
 =head1 NOTES
 
-The module does not allow for repetition of values.
+The C<DateTime::Set> module does not allow for repetition of values.
 That is, a function like C<next($dt)> will always
 return a value I<bigger than> C<$dt>.
 Each element in a set is different.
 
-Although the datetime values are random,
+Although the datetime values in the C<DateTime::Set> are random,
 the accessors (C<as_list>, C<iterator/next/previous>) always 
 return sorted datetimes.
 
-The module calculates all intervals in seconds, which may give
+The I<set> functions calculate all intervals in seconds, which may give
 a 32-bit integer overflow if you ask for a density less than
 about "1 occurence in each 30 years" - which is about a billion seconds.
 This may change in a next version.
+
+=head1 COOKBOOK
+
+=head2 Make a random sunday
+
+  use DateTime::Event::Random;
+
+  my $dt = DateTime::Event::Random->datetime;
+  $dt->truncate( to => week );
+  $dt->add( days => 6 );
+
+  print "datetime " . $dt->datetime . "\n";
+  print "weekday " .  $dt->day_of_week . "\n";
+
+=head2 Make a random friday-13th
+
+  use DateTime::Event::Random;
+  use DateTime::Event::Recurrence;
+
+  my $friday = DateTime::Event::Recurrence->monthly( days => 13 );
+  my $day_13 = DateTime::Event::Recurrence->weekly( days => 6 ); 
+  my $friday_13 = $friday->intersection( $day_13 );
+
+  my $dt = $friday_13->next( DateTime::Event::Random->datetime );
+
+  print "datetime " .  $dt->datetime . "\n";
+  print "weekday " .   $dt->day_of_week . "\n";
+  print "month day " . $dt->day . "\n";
+
+=head2 Make a random datetime, today
+
+  TODO
 
 =head1 AUTHOR
 

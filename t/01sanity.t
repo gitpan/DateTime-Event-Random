@@ -2,7 +2,7 @@
 
 use strict;
 
-use Test::More tests => 2;
+use Test::More tests => 4;
 
 use DateTime;
 use DateTime::Event::Random;
@@ -56,5 +56,17 @@ use DateTime::Event::Random;
     ok( $mean > 4 && $mean < 16,
         "Average days in span = $mean, expected about 10" );
 
+}
+
+{
+my $dur = DateTime::Event::Random::duration;
+ok( UNIVERSAL::isa( $dur, "DateTime::Duration" ),
+    "duration() generates a duration: ".
+       join(" ", $dur->deltas ) );
+
+my $dt = DateTime::Event::Random::datetime;
+ok( UNIVERSAL::isa( $dt, "DateTime" ),
+    "datetime() generates a datetime: ".
+       $dt->datetime  );
 }
 
