@@ -7,22 +7,14 @@ use vars qw( $VERSION @ISA );
 use Carp;
 
 BEGIN {
-    $VERSION = 0.01_03;
+    $VERSION = 0.01_04;
 }
 
 sub new_cached {
     my $class = shift;
     my %args = @_;   # the parameters are validated by DT::Set
 
-    my $density = 24*60*60;  # default = 1 day
-    $density = ( delete $args{nanoseconds} ) / 1E9 if exists $args{nanoseconds}; 
-    $density = ( delete $args{seconds} ) if exists $args{seconds};
-    $density = ( delete $args{minutes} ) * 60 if exists $args{minutes};
-    $density = ( delete $args{hours} ) * 60*60 if exists $args{hours};
-    $density = ( delete $args{days} ) * 24*60*60 if exists $args{days};
-    $density = ( delete $args{weeks} ) * 7*24*60*60 if exists $args{weeks};
-    $density = ( delete $args{months} ) * 365.24/12*24*60*60 if exists $args{months};
-    $density = ( delete $args{years} ) * 365.24*24*60*60 if exists $args{years};
+    my $density = $class->_random_init( \%args );
 
     my $set = DateTime::Set->empty_set;
 
@@ -33,32 +25,28 @@ sub new_cached {
                     my $next = $set->next( $dt );
                     return ( $prev, $next ) if defined $prev && defined $next;
                     my $last = $set->iterator->next;
-                    my ( $sec, $nano );
                     do {
-                        ( $sec, $nano ) = _log( $density );
                         if ( defined $last )
                         {
-                            $last = $last->clone->subtract( seconds => $sec, nanoseconds => $nano );
+                            $last += $class->_random_duration( $density );
                         }
                         else
                         {
-                            $last = $dt->clone->subtract( seconds => $sec, nanoseconds => $nano );
+                            $last = $dt - $class->_random_duration( $density );
                         }
                         $set = $set->union( $last );
                     } while $last >= $dt;
 
                     $last = $set->iterator->previous;
                     do {
-                        ( $sec, $nano ) = _log( $density );
                         if ( defined $last )
                         {
-                            $last = $last->clone->add( seconds => $sec, nanoseconds => $nano );
+                            $last += $class->_random_duration( $density );
                         }
                         else
                         {
-                            $last = $dt->clone->add( seconds => $sec, nanoseconds => $nano );
+                            $last = $dt + $class->_random_duration( $density );
                         }
-
                         $set = $set->union( $last );
                     } while $last <= $dt;
 
@@ -69,7 +57,7 @@ sub new_cached {
                 };
 
     my $cached_set = DateTime::Set->from_recurrence(
-        next => sub {
+        next =>  sub {
                     my ( undef, $next ) = &$get_cached( $_[0] );
                     return $next;
                  },
@@ -85,45 +73,62 @@ sub new_cached {
 
 sub new {
     my $class = shift;
-    my %args = @_;   # the parameters are validated by DT::Set
-
-    my $density = 24*60*60;  # default = 1 day
-    $density = ( delete $args{nanoseconds} ) / 1E9 if exists $args{nanoseconds}; 
-    $density = ( delete $args{seconds} ) if exists $args{seconds};
-    $density = ( delete $args{minutes} ) * 60 if exists $args{minutes};
-    $density = ( delete $args{hours} ) * 60*60 if exists $args{hours};
-    $density = ( delete $args{days} ) * 24*60*60 if exists $args{days};
-    $density = ( delete $args{weeks} ) * 7*24*60*60 if exists $args{weeks};
-    $density = ( delete $args{months} ) * 365.24/12*24*60*60 if exists $args{months};
-    $density = ( delete $args{years} ) * 365.24*24*60*60 if exists $args{years};
-
-    my $set = DateTime::Set->from_recurrence(
-        next => sub {
-                    my ( $sec, $nano ) = _log( $density );
-                    return $_[0]->add(
-                        seconds => $sec,
-                        nanoseconds => $nano,
-                    );
-                 },
+    my %args = @_;   # the parameters will be validated by DT::Set
+    my $density = $class->_random_init( \%args );
+    return DateTime::Set->from_recurrence(
+        next =>     sub {
+                        $_[0] + $class->_random_duration( $density );
+                    },
         previous => sub {
-                    my ( $sec, $nano ) = _log( $density );
-                    return $_[0]->subtract(
-                        seconds => $sec,
-                        nanoseconds => $nano,
-                    );
-                 },
+                        $_[0] - $class->_random_duration( $density );
+                    },
         %args,
     );
-    return $set;
 }
 
-sub _log {
+sub _random_init {
+    my $class = shift;
+    my $args = shift;  
+
+    my $density = 0;
+    $density += ( delete $args->{nanoseconds} ) / 1E9 if exists $args->{nanoseconds};
+    $density += ( delete $args->{seconds} ) if exists $args->{seconds};
+    $density += ( delete $args->{minutes} ) * 60 if exists $args->{minutes};
+    $density += ( delete $args->{hours} )  * 60*60 if exists $args->{hours};
+    $density += ( delete $args->{days} )   * 24*60*60 if exists $args->{days};
+    $density += ( delete $args->{weeks} )  * 7*24*60*60 if exists $args->{weeks};
+    $density += ( delete $args->{months} ) * 365.24/12*24*60*60 if exists $args->{months};
+    $density += ( delete $args->{years} )  * 365.24*24*60*60 if exists $args->{years};
+
+    $density = 24*60*60 unless $density;  # default = 1 day
+
+    return $density;
+}
+
+sub _random_duration {
+    my $class = shift;
+    my $density = shift;
+
     # this is a density function that approximates to 
     # the "duration" in seconds between two random dates.
     # $_[0] is the target average duration, in seconds.
-    my $tmp = log( 1 - rand ) * ( - $_[0] );
-    # the result is split into "seconds" and "nanoseconds"
-    return ( int( $tmp ), int( 1E9 * ( $tmp - int( $tmp ) ) ) ); 
+    my $tmp = log( 1 - rand ) * ( - $density );
+
+    # split into "days", "seconds" and "nanoseconds"
+
+    my $days = int( $tmp / ( 24*60*60 ) );
+    if ( $days > 1000 ) 
+    {
+        return DateTime::Duration->new(
+               days =>        $days,
+               seconds =>     int( rand( 61 ) ),
+               nanoseconds => int( rand( 1E9 ) ) );
+    }
+
+    my $seconds = int( $tmp );
+    return DateTime::Duration->new( 
+               seconds =>     $seconds, 
+               nanoseconds => int( 1E9 * ( $tmp - $seconds ) ) ); 
 }
 
 sub datetime {
@@ -152,9 +157,9 @@ sub datetime {
            $span->end->is_infinite ) )
     {
         my $dt = DateTime->now( %args );
-        $dt->add( months => ( 0.5 - rand ) * 1E6 );
-        $dt->add( days => ( 0.5 - rand ) * 31 );
-        $dt->add( seconds => ( 0.5 - rand ) * 24*60*60 );
+        $dt->add( months =>      ( 0.5 - rand ) * 1E6 );
+        $dt->add( days =>        ( 0.5 - rand ) * 31 );
+        $dt->add( seconds =>     ( 0.5 - rand ) * 24*60*60 );
         $dt->add( nanoseconds => ( 0.5 - rand ) * 1E9 );
         return $dt;
     }
@@ -164,9 +169,9 @@ sub datetime {
     if ( $span->start->is_infinite )
     {
         my $dt = $span->end;
-        $dt->add( months => ( - rand ) * 1E6 );
-        $dt->add( days => ( - rand ) * 31 );
-        $dt->add( seconds => ( - rand ) * 24*60*60 );
+        $dt->add( months =>      ( - rand ) * 1E6 );
+        $dt->add( days =>        ( - rand ) * 31 );
+        $dt->add( seconds =>     ( - rand ) * 24*60*60 );
         $dt->add( nanoseconds => ( - rand ) * 1E9 );
         return $dt;
     }
@@ -174,9 +179,9 @@ sub datetime {
     if ( $span->end->is_infinite )
     {
         my $dt = $span->start;
-        $dt->add( months => ( rand ) * 1E6 );
-        $dt->add( days => ( rand ) * 31 );
-        $dt->add( seconds => ( rand ) * 24*60*60 );
+        $dt->add( months =>      ( rand ) * 1E6 );
+        $dt->add( days =>        ( rand ) * 31 );
+        $dt->add( seconds =>     ( rand ) * 24*60*60 );
         $dt->add( nanoseconds => ( rand ) * 1E9 );
         return $dt;
     }
@@ -213,9 +218,11 @@ sub datetime {
 
     my %duration;
     my $dt;
-    while (1) {
+    while (1) 
+    {
         %duration = ();
-        for ( keys %deltas ) {
+        for ( keys %deltas ) 
+        {
             $duration{ $_ } = int( rand() * $deltas{ $_ } ) 
                 if $deltas{ $_ };
         }
@@ -223,7 +230,8 @@ sub datetime {
         return $dt if $span->contains( $dt );
 
         %duration = ();
-        for ( keys %deltas ) {
+        for ( keys %deltas ) 
+        {
             $duration{ $_ } = int( rand() * $deltas{ $_ } )
                 if $deltas{ $_ };
         }
@@ -237,8 +245,10 @@ sub duration {
     carp "Missing class name in call to ".__PACKAGE__."->duration()"
         unless defined $class;
     my $dur;
-    if ( @_ ) {
-        if ( $_[0] eq 'duration' ) {
+    if ( @_ ) 
+    {
+        if ( $_[0] eq 'duration' ) 
+        {
             $dur = $_[1];
         }
         else
@@ -268,43 +278,42 @@ DateTime::Event::Random - DateTime extension for creating random datetimes.
 
  use DateTime::Event::Random;
 
- # creates a DateTime::Set of random dates 
+ # Creates a DateTime
+ $dt = DateTime::Event::Random->datetime;
+
+ # Creates a DateTime in the future
+ $dt = DateTime::Event::Random->datetime( after => DateTime->now );
+
+ # Creates a DateTime::Duration between 0 and 15 days
+ $dur = DateTime::Event::Random->duration( days => 15 );
+
+ # Creates a DateTime::Set of random dates 
  # with an average density of 4 months, 
  # that is, 3 events per year, with a span 
  # of 2 years
- my $rand = DateTime::Event::Random->new(
+ my $dt_set = DateTime::Event::Random->new(
      months => 4,
      start => DateTime->new( year => 2003 ),
      end =>   DateTime->new( year => 2005 ),
  ); 
 
- print "next is ", $rand->next( DateTime->today )->datetime, "\n";
+ print "next is ", $dt_set->next( DateTime->today )->datetime, "\n";
  # output: next is 2004-02-29T22:00:51
 
- my $count = $rand->count;
+ my $count = $dt_set->count;
  print "days $count \n";
  # output: days 8  -- should be a number near 6
 
- my @days = $rand->as_list;
+ my @days = $dt_set->as_list;
  print join('; ', map{ $_->datetime } @days ) . "\n";
  # output: 2003-02-16T21:08:58; 2003-02-18T01:24:13; ...
-
-
- # Create a DateTime
- $dt = DateTime::Event::Random->datetime( after => DateTime->now );
-
-
- # Create a DateTime::Duration
- $dur = DateTime::Event::Random->duration( days => 15 );
 
 
 =head1 DESCRIPTION
 
 This module provides convenience methods that let you easily create
-C<DateTime::Set> objects with random datetimes.
-
-It also provides functions for building random C<DateTime> and 
-C<DateTime::Duration> objects.
+C<DateTime::Set>, C<DateTime>, or C<DateTime::Duration>
+objects with random values.
 
 
 =head1 USAGE
@@ -313,12 +322,11 @@ C<DateTime::Duration> objects.
 
 =item * new
 
-Creates a C<DateTime::Set> object representing the
-set of random events.
+Creates a C<DateTime::Set> object that contains random events.
 
   my $random_set = DateTime::Event::Random->new;
 
-The set members occur at an average of once a day, forever.
+The events occur at an average of once a day, forever.
 
 You may give I<density> parameters to change this:
 
@@ -326,10 +334,10 @@ You may give I<density> parameters to change this:
 
   my $three_weekly_set = DateTime::Event::Random->new( weeks => 3 );
 
-If I<span> parameters are given, then the set is limited to the span:
+If I<span> parameters are given, then the set is bounded:
 
  my $rand = DateTime::Event::Random->new(
-     months => 4,
+     months => 4,   # events occur about 3 times a year
      start => DateTime->new( year => 2003 ),
      end =>   DateTime->new( year => 2005 ),
  );
@@ -337,6 +345,13 @@ If I<span> parameters are given, then the set is limited to the span:
 Note that the random values are generated on demand, 
 which means that values may not be repeateable between iterations.
 See the C<new_cached> constructor for a solution.
+
+A C<DateTime::Set> object does not allow for repetition of values.
+Each element in a set is different.
+
+The C<DateTime::Set> accessors (C<as_list>, C<iterator/next/previous>)
+always return I<sorted> datetimes.
+
 
 =item * new_cached
 
@@ -381,24 +396,37 @@ duration:
     $dur = DateTime::Event::Random->duration( days => 15 );
 
 
-=head1 NOTES
+=head1 INTERNALS
 
-The C<DateTime::Set> module does not allow for repetition of values.
-That is, a function like C<next($dt)> will always
-return a value I<bigger than> C<$dt>.
-Each element in a set is different.
+=item * _random_init
+=item * _random_duration
 
-Although the datetime values in the C<DateTime::Set> are random,
-the accessors (C<as_list>, C<iterator/next/previous>) always 
-return I<sorted> datetimes.
+These methods are called by C<DateTime::Set> to generate
+the random datetime sequence.
 
-The I<set> functions calculate all intervals in seconds, which may give
-a 32-bit integer overflow if you ask for a density less than
-about "1 occurence in each 30 years" - which is about a billion seconds.
-This may change in a next version.
+You can override these methods in order to generate different 
+random distributions. The default distribution is "uniform".
 
 
 =head1 COOKBOOK
+
+
+=head2 Make a random datetime
+
+  use DateTime::Event::Random;
+
+  my $dt = DateTime::Event::Random->datetime;
+
+  print "datetime " .  $dt->datetime . "\n";
+
+
+=head2 Make a random datetime, today
+
+  use DateTime::Event::Random;
+
+  my $dt = DateTime->today + DateTime::Event::Random->duration( days => 1 );
+
+  print "datetime " .  $dt->datetime . "\n";
 
 
 =head2 Make a random sunday
@@ -429,15 +457,6 @@ This may change in a next version.
   print "month day " . $dt->day . "\n";
 
 
-=head2 Make a random datetime, today
-
-  use DateTime::Event::Random;
-
-  my $dt = DateTime->today + DateTime::Event::Random->duration( days => 1 );
-
-  print "datetime " .  $dt->datetime . "\n";
-
-
 =head1 AUTHOR
 
 Flavio Soibelmann Glock
@@ -461,9 +480,9 @@ datetime@perl.org mailing list
 
 DateTime Web page at http://datetime.perl.org/
 
-DateTime - date and time :)
+DateTime and DateTime::Duration - date and time.
 
-DateTime::Set - for recurrence-set accessors docs.
+DateTime::Set - "sets"
 
 =cut
 

@@ -1,5 +1,7 @@
 TODO list for Perl module DateTime::Event::Random
 
+Move simpler examples to beginning
+
 Options:
     truncate_to => 'days'
 
@@ -16,6 +18,9 @@ Optimize new_cached()
 Optimize duration()
 
 random_datetime parameters - locale, time_zone
+
+$set->next($dt) on an unbounded set should use a different
+density value (0.5 density)
 
 Documented problems - from the POD:
 

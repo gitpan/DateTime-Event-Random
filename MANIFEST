@@ -9,4 +9,5 @@ lib/DateTime/Event/Random.pm
 t/00load.t
 t/01sanity.t
 t/02cached.t
+t/03stress.t
 META.yml                                Module meta-data (added by MakeMaker)
