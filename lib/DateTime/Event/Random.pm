@@ -7,7 +7,7 @@ use vars qw( $VERSION @ISA );
 use Carp;
 
 BEGIN {
-    $VERSION = 0.02_01;
+    $VERSION = 0.03;
 }
 
 sub new_cached {
@@ -52,10 +52,12 @@ sub new_cached {
 
     my $cached_set = DateTime::Set->from_recurrence(
         next =>  sub {
+                    return $_[0] if $_[0]->is_infinite;
                     my ( undef, $next ) = &$get_cached( $_[0] );
                     return $next;
                  },
         previous => sub {
+                    return $_[0] if $_[0]->is_infinite;
                     my ( $previous, undef ) = &$get_cached( $_[0] );
                     return $previous;
                  },
@@ -71,9 +73,11 @@ sub new {
     my $density = $class->_random_init( \%args );
     return DateTime::Set->from_recurrence(
         next =>     sub {
+                        return $_[0] if $_[0]->is_infinite;
                         $_[0] + $class->_random_duration( $density );
                     },
         previous => sub {
+                        return $_[0] if $_[0]->is_infinite;
                         $_[0] - $class->_random_duration( $density );
                     },
         %args,
@@ -104,17 +108,33 @@ sub _random_init {
 
     $density = 24*60*60 unless $density;  # default = 1 day
 
-    return $density;
+    return {
+        density => $density,
+        starting => 1,
+    };
 }
 
 sub _random_duration {
     my $class = shift;
-    my $density = shift;
+    my $param = shift;
 
-    # this is a density function that approximates to 
-    # the "duration" in seconds between two random dates.
-    # $_[0] is the target average duration, in seconds.
-    my $tmp = log( 1 - rand ) * ( - $density );
+    my $tmp;
+    if ( $param->{starting} )
+    {
+        $param->{starting} = 0;
+
+        # this is a density function that approximates to 
+        # the "duration" in seconds between a random and
+        # a non-random date.
+        $tmp = log( 1 - rand ) * ( - $param->{density} / 2 );
+    }
+    else
+    {
+        # this is a density function that approximates to 
+        # the "duration" in seconds between two random dates.
+        $tmp = log( 1 - rand ) * ( - $param->{density} );
+    }
+
 
     # split into "days", "seconds" and "nanoseconds"
 
@@ -317,10 +337,6 @@ DateTime::Event::Random - DateTime extension for creating random datetimes.
  print "next is ", $dt_set->next( DateTime->today )->datetime, "\n";
  # output: next is 2004-02-29T22:00:51
 
- my $count = $dt_set->count;
- print "days $count \n";
- # output: days 8  -- should be a number near 6
-
  my @days = $dt_set->as_list;
  print join('; ', map{ $_->datetime } @days ) . "\n";
  # output: 2003-02-16T21:08:58; 2003-02-18T01:24:13; ...
@@ -334,6 +350,8 @@ objects with random values.
 
 
 =head1 USAGE
+
+=over 4
 
 =item * new
 
@@ -417,8 +435,11 @@ duration:
 
     $dur = DateTime::Event::Random->duration( days => 15 );
 
+=back
 
 =head1 INTERNALS
+
+=over 4
 
 =item * _random_init
 
@@ -432,9 +453,11 @@ random distributions. The default random distribution is "uniform".
 
 The I<internals> API is not stable.
 
+=back
 
 =head1 COOKBOOK
 
+=over 4
 
 =item * Make a random datetime
 
@@ -485,8 +508,8 @@ length of day problems, such as DST changes and leap seconds:
   use DateTime::Event::Random;
   use DateTime::Event::Recurrence;
 
-  my $friday = DateTime::Event::Recurrence->monthly( days => 13 );
-  my $day_13 = DateTime::Event::Recurrence->weekly( days => 6 ); 
+  my $day_13 = DateTime::Event::Recurrence->monthly( days => 13 );
+  my $friday = DateTime::Event::Recurrence->weekly( days => 6 ); 
   my $friday_13 = $friday->intersection( $day_13 );
 
   my $dt = $friday_13->next( DateTime::Event::Random->datetime );
@@ -495,6 +518,7 @@ length of day problems, such as DST changes and leap seconds:
   print "weekday " .   $dt->day_of_week . "\n";
   print "month day " . $dt->day . "\n";
 
+=back
 
 =head1 AUTHOR
 
