@@ -59,12 +59,12 @@ use DateTime::Event::Random;
 }
 
 {
-my $dur = DateTime::Event::Random::duration;
+my $dur = DateTime::Event::Random->duration;
 ok( UNIVERSAL::isa( $dur, "DateTime::Duration" ),
     "duration() generates a duration: ".
        join(" ", $dur->deltas ) );
 
-my $dt = DateTime::Event::Random::datetime;
+my $dt = DateTime::Event::Random->datetime;
 ok( UNIVERSAL::isa( $dt, "DateTime" ),
     "datetime() generates a datetime: ".
        $dt->datetime  );

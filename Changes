@@ -1,3 +1,7 @@
+0.01_03  2004-01-06
+- random_duration has 'duration' parameters
+- more examples
+
 0.01_02  2004-01-06
 - random_duration, random_datetime
 - more examples

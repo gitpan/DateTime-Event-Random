@@ -4,9 +4,10 @@ package DateTime::Event::Random;
 use strict;
 use DateTime::Set;
 use vars qw( $VERSION @ISA );
+use Carp;
 
 BEGIN {
-    $VERSION = 0.01_02;
+    $VERSION = 0.01_03;
 }
 
 sub new_cached {
@@ -127,6 +128,8 @@ sub _log {
 
 sub datetime {
     my $class = shift;
+    carp "Missing class name in call to ".__PACKAGE__."->datetime()"
+        unless defined $class;
     my %args = @_;
     my %span_args;
     my $span;
@@ -231,7 +234,25 @@ sub datetime {
 
 sub duration {
     my $class = shift;
-    return DateTime->now() - datetime();
+    carp "Missing class name in call to ".__PACKAGE__."->duration()"
+        unless defined $class;
+    my $dur;
+    if ( @_ ) {
+        if ( $_[0] eq 'duration' ) {
+            $dur = $_[1];
+        }
+        else
+        {
+            $dur = DateTime::Duration->new( @_ );
+        }
+    }
+    if ( $dur ) {
+        my $dt1 = DateTime->now();
+        my $dt2 = $dt1 + $dur;
+        my $dt3 = $class->datetime( start => $dt1, before => $dt2 );
+        return $dt3 - $dt1;
+    }
+    return DateTime->now() - $class->datetime();
 }
 
 1;
@@ -240,13 +261,14 @@ __END__
 
 =head1 NAME
 
-DateTime::Event::Random - DateTime::Set extension for creating random datetimes.
+DateTime::Event::Random - DateTime extension for creating random datetimes.
+
 
 =head1 SYNOPSIS
 
  use DateTime::Event::Random;
 
- # creates a set of random dates 
+ # creates a DateTime::Set of random dates 
  # with an average density of 4 months, 
  # that is, 3 events per year, with a span 
  # of 2 years
@@ -267,6 +289,15 @@ DateTime::Event::Random - DateTime::Set extension for creating random datetimes.
  print join('; ', map{ $_->datetime } @days ) . "\n";
  # output: 2003-02-16T21:08:58; 2003-02-18T01:24:13; ...
 
+
+ # Create a DateTime
+ $dt = DateTime::Event::Random->datetime( after => DateTime->now );
+
+
+ # Create a DateTime::Duration
+ $dur = DateTime::Event::Random->duration( days => 15 );
+
+
 =head1 DESCRIPTION
 
 This module provides convenience methods that let you easily create
@@ -275,13 +306,14 @@ C<DateTime::Set> objects with random datetimes.
 It also provides functions for building random C<DateTime> and 
 C<DateTime::Duration> objects.
 
+
 =head1 USAGE
 
 =over 4
 
 =item * new
 
-Returns a C<DateTime::Set> object representing the
+Creates a C<DateTime::Set> object representing the
 set of random events.
 
   my $random_set = DateTime::Event::Random->new;
@@ -302,20 +334,19 @@ If I<span> parameters are given, then the set is limited to the span:
      end =>   DateTime->new( year => 2005 ),
  );
 
-Unbounded random sets are generated on demand, which
-means that the datetime values would not be repeateable between iterations.
+Note that the random values are generated on demand, 
+which means that values may not be repeateable between iterations.
 See the C<new_cached> constructor for a solution.
 
 =item * new_cached
 
-Returns a C<DateTime::Set> object representing the
+Creates a C<DateTime::Set> object representing the
 set of random events.
 
   my $random_set = DateTime::Event::Random->new_cached;
 
-If a set is created with C<new_cached>, then once an event is I<seen>,
-it is cached, such that
-all sequences extracted from the set are equal.
+If a set is created with C<new_cached>, then once an value is I<seen>,
+it is cached, such that all sequences extracted from the set are equal.
 
 Cached sets are slower and take more memory than sets generated
 with the plain C<new> constructor. They should only be used if
@@ -342,6 +373,13 @@ Returns a random C<DateTime::Duration> object.
 
     $dur = DateTime::Event::Random->duration;
 
+If a C<duration> is specified, then the returned value will be within the
+duration:
+
+    $dur = DateTime::Event::Random->duration( duration => $dur );
+
+    $dur = DateTime::Event::Random->duration( days => 15 );
+
 
 =head1 NOTES
 
@@ -352,14 +390,16 @@ Each element in a set is different.
 
 Although the datetime values in the C<DateTime::Set> are random,
 the accessors (C<as_list>, C<iterator/next/previous>) always 
-return sorted datetimes.
+return I<sorted> datetimes.
 
 The I<set> functions calculate all intervals in seconds, which may give
 a 32-bit integer overflow if you ask for a density less than
 about "1 occurence in each 30 years" - which is about a billion seconds.
 This may change in a next version.
 
+
 =head1 COOKBOOK
+
 
 =head2 Make a random sunday
 
@@ -371,6 +411,7 @@ This may change in a next version.
 
   print "datetime " . $dt->datetime . "\n";
   print "weekday " .  $dt->day_of_week . "\n";
+
 
 =head2 Make a random friday-13th
 
@@ -387,14 +428,21 @@ This may change in a next version.
   print "weekday " .   $dt->day_of_week . "\n";
   print "month day " . $dt->day . "\n";
 
+
 =head2 Make a random datetime, today
 
-  TODO
+  use DateTime::Event::Random;
+
+  my $dt = DateTime->today + DateTime::Event::Random->duration( days => 1 );
+
+  print "datetime " .  $dt->datetime . "\n";
+
 
 =head1 AUTHOR
 
 Flavio Soibelmann Glock
 fglock@pucrs.br
+
 
 =head1 COPYRIGHT
 
@@ -405,6 +453,7 @@ same terms as Perl itself.
 
 The full text of the license can be found in the LICENSE file included
 with this module.
+
 
 =head1 SEE ALSO
 

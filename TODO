@@ -7,13 +7,13 @@ How to obtain shuffled datetimes?
 
 How to obtain exactly an event per week?
 
-duration() parameters - minimum, maximum size
-
 Find out some links about the "density function"
 
 Implement other random distributions
 
 Optimize new_cached()
+
+Optimize duration()
 
 random_datetime parameters - locale, time_zone
 
