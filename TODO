@@ -1,0 +1,24 @@
+TODO list for Perl module DateTime::Event::Random
+
+Options:
+    truncate_to => 'days'
+
+How to obtain shuffled datetimes?
+
+Make class functions such as:
+    rand_datetime()
+    rand_duration()
+    rand_datetime_in_span()
+
+Find out some links about the "density function"
+
+Documented problems - from the POD:
+
+Note that, although the datetime values are random,
+the accessors (C<as_list>, C<iterator/next/previous>) always 
+return sorted datetimes.
+
+The module calculates all intervals in seconds, which may give
+a 32-bit integer overflow if you ask for a density less than
+about "1 occurence in each 30 years" - that is, about a billion seconds.
+This may change in a next version.
