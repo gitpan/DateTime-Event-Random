@@ -1,3 +1,6 @@
+0.02_01  2004-01-08
+- POD fixes
+
 0.02     2004-01-08
 - simplify (and fix) new_cached() algorithm
 - revised docs

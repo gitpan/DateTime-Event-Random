@@ -7,7 +7,7 @@ use vars qw( $VERSION @ISA );
 use Carp;
 
 BEGIN {
-    $VERSION = 0.02;
+    $VERSION = 0.02_01;
 }
 
 sub new_cached {
@@ -401,7 +401,7 @@ If a C<span> is specified, then the returned value will be within the span:
     $dt = DateTime::Event::Random->datetime( after => DateTime->now );
 
 You can also specify C<locale> and C<time_zone> parameters,
-just like in C<DateTime->new()>.
+just like in C<< DateTime->new() >>.
 
 
 =item * duration
@@ -421,6 +421,7 @@ duration:
 =head1 INTERNALS
 
 =item * _random_init
+
 =item * _random_duration
 
 These methods are called by C<DateTime::Set> to generate
@@ -429,7 +430,7 @@ the random datetime sequence.
 You can override these methods in order to make different 
 random distributions. The default random distribution is "uniform".
 
-The internals API is not stable.
+The I<internals> API is not stable.
 
 
 =head1 COOKBOOK
